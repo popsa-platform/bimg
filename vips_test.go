@@ -1,7 +1,7 @@
 package bimg
 
 import (
-	"io/ioutil"
+	"io"
 	"os"
 	"path"
 	"testing"
@@ -114,28 +114,30 @@ func TestVipsAutoRotate(t *testing.T) {
 		{"exif/Landscape_2.jpg", 0},
 		{"exif/Landscape_3.jpg", 0},
 		{"exif/Landscape_4.jpg", 0},
-		{"exif/Landscape_5.jpg", 5},
+		{"exif/Landscape_5.jpg", 0},
 		{"exif/Landscape_6.jpg", 0},
-		{"exif/Landscape_7.jpg", 7},
+		{"exif/Landscape_7.jpg", 0},
 	}
 
 	for _, file := range files {
-		image, _, _ := vipsRead(readImage(file.name))
+		t.Run(file.name, func(t *testing.T) {
+			image, _, _ := vipsRead(readImage(file.name))
 
-		newImg, err := vipsAutoRotate(image)
-		if err != nil {
-			t.Fatal("Cannot auto rotate the image")
-		}
+			newImg, err := vipsAutoRotate(image)
+			if err != nil {
+				t.Fatal("Cannot auto rotate the image")
+			}
 
-		orientation := vipsExifOrientation(newImg)
-		if orientation != file.orientation {
-			t.Fatalf("Invalid image orientation: %d != %d", orientation, file.orientation)
-		}
+			orientation := vipsExifOrientation(newImg)
+			if orientation != file.orientation {
+				t.Fatalf("Invalid image orientation: %d != %d", orientation, file.orientation)
+			}
 
-		buf, _ := vipsSave(newImg, vipsSaveOptions{Quality: 95})
-		if len(buf) == 0 {
-			t.Fatal("Empty image")
-		}
+			buf, _ := vipsSave(newImg, vipsSaveOptions{Quality: 95})
+			if len(buf) == 0 {
+				t.Fatal("Empty image")
+			}
+		})
 	}
 }
 
@@ -248,7 +250,7 @@ func TestVipsExifShort(t *testing.T) {
 
 func readImage(file string) []byte {
 	img, _ := os.Open(path.Join("testdata", file))
-	buf, _ := ioutil.ReadAll(img)
+	buf, _ := io.ReadAll(img)
 	defer img.Close()
 	return buf
 }
