@@ -1,7 +1,7 @@
 package bimg
 
 import (
-	"io/ioutil"
+	"io"
 	"os"
 	"path"
 	"testing"
@@ -28,7 +28,7 @@ func TestDeterminateImageType(t *testing.T) {
 
 	for _, file := range files {
 		img, _ := os.Open(path.Join("testdata", file.name))
-		buf, _ := ioutil.ReadAll(img)
+		buf, _ := io.ReadAll(img)
 		defer img.Close()
 
 		if VipsIsTypeSupported(file.expected) {
@@ -69,7 +69,7 @@ func TestDeterminateImageTypeName(t *testing.T) {
 		}
 
 		img, _ := os.Open(path.Join("testdata", file.name))
-		buf, _ := ioutil.ReadAll(img)
+		buf, _ := io.ReadAll(img)
 		defer img.Close()
 
 		value := DetermineImageTypeName(buf)
@@ -171,16 +171,18 @@ func TestIsTypeNameSupportedSave(t *testing.T) {
 		{"png", true},
 		{"webp", true},
 		{"pdf", false},
-		{"tiff", VipsVersion >= "8.5.0"},
-		{"heif", VipsVersion >= "8.8.0"},
-		{"avif", VipsVersion >= "8.9.0"},
-		{"jxl", VipsVersion >= "8.11.0"},
-		{"gif", VipsVersion >= "8.12.0"},
+		{"tiff", true},
+		{"heif", true},
+		{"avif", true},
+		{"jxl", true},
+		{"gif", true},
 	}
 
 	for _, n := range types {
-		if IsTypeNameSupportedSave(n.name) != n.expected {
-			t.Fatalf("Image type %s is not valid", n.name)
-		}
+		t.Run(n.name, func(t *testing.T) {
+			if IsTypeNameSupportedSave(n.name) != n.expected {
+				t.Fatalf("Image type %s is not valid", n.name)
+			}
+		})
 	}
 }
