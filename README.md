@@ -1,355 +1,156 @@
-# bimg [![GoDoc](https://godoc.org/github.com/h2non/bimg?status.svg)](https://godoc.org/github.com/h2non/bimg) [![Coverage Status](https://coveralls.io/repos/github/h2non/bimg/badge.svg?branch=master)](https://coveralls.io/github/h2non/bimg?branch=master) ![License](https://img.shields.io/badge/license-MIT-blue.svg)
+# bimg
 
-Small [Go](http://golang.org) package for fast high-level image processing using [libvips](https://github.com/jcupitt/libvips) via C bindings, providing a simple [programmatic API](#examples).
+> Fast, high-level Go image processing library powered by libvips via CGO bindings
 
-bimg was designed to be a small and efficient library supporting common [image operations](#supported-image-operations) such as crop, resize, rotate, zoom or watermark. It can read JPEG, PNG, WEBP natively, and optionally TIFF, PDF, GIF and SVG formats if `libvips@8.3+` is compiled with proper library bindings. Lastly AVIF is supported as of `libvips@8.9+`. For AVIF support `libheif` needs to be [compiled with an applicable AVIF en-/decoder](https://github.com/strukturag/libheif#compiling).
+## TL;DR
 
-bimg is able to output images as JPEG, PNG and WEBP formats, including transparent conversion across them.
+- **Purpose**: Provides a Go API for high-performance image transformations using libvips C library
+- **Trigger**: Direct library import and method calls from Go applications
+- **Key Services**: Native C library integration via CGO (libvips), no AWS services
+- **Processing**: Resize, crop, rotate, watermark, format conversion, and effects on JPEG, PNG, WebP, TIFF, PDF, SVG, GIF, HEIF/AVIF, and JXL images
+- **Where to Start**: `image.go` for the fluent API interface
 
-bimg uses internally libvips, a powerful library written in C for image processing which requires a [low memory footprint](https://github.com/jcupitt/libvips/wiki/Speed_and_Memory_Use)
-and it's typically 4x faster than using the quickest ImageMagick and GraphicsMagick settings or Go native `image` package, and in some cases it's even 8x faster processing JPEG images.
+## Architecture Overview
 
-If you're looking for an HTTP based image processing solution, see [imaginary](https://github.com/h2non/imaginary).
+```mermaid
+flowchart TD
+    A[Go Application] --> B[bimg.Image DSL]
+    B --> C[Options Processing]
+    C --> D[resizer Function]
+    D --> E[vips C Bindings]
+    E --> F[libvips C Library]
+    F --> G[Image Buffer Output]
 
-bimg was heavily inspired in [sharp](https://github.com/lovell/sharp), its homologous package built for [node.js](http://nodejs.org). bimg is used in production environments processing thousands of images per day.
+    H[Image Buffer Input] --> I[vipsRead]
+    I --> E
 
-**v1 notice**: `bimg` introduces some minor breaking changes in `v1` release.
-If you're using `gopkg.in`, you can still rely in the `v0` without worrying about API breaking changes.
-
-## Contents
-
-- [Supported image operations](#supported-image-operations)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Performance](#performance)
-- [Benchmark](#benchmark)
-- [Examples](#examples)
-- [Debugging](#debugging)
-- [API](#api)
-- [Authors](#authors)
-- [Credits](#credits)
-
-## Supported image operations
-
-- Resize
-- Enlarge
-- Crop (including smart crop support, libvips 8.5+)
-- Rotate (with auto-rotate based on EXIF orientation)
-- Flip (with auto-flip based on EXIF metadata)
-- Flop
-- Zoom
-- Thumbnail
-- Extract area
-- Watermark (using text or image)
-- Gaussian blur effect
-- Custom output color space (RGB, grayscale...)
-- Format conversion (with additional quality/compression settings)
-- EXIF metadata (size, alpha channel, profile, orientation...)
-- Trim (libvips 8.6+)
-
-## Prerequisites
-
-- [libvips](https://github.com/libvips/libvips) 8.3+ (8.8+ recommended)
-- C compatible compiler such as gcc 4.6+ or clang 3.0+
-- Go 1.3+
-
-**Note**: 
- * `libvips` v8.3+ is required for GIF, PDF and SVG support.
- * `libvips` v8.9+ is required for AVIF support. `libheif` compiled with a AVIF en-/decoder also needs to be present.
-
-## Installation
-
-```bash
-go get -u github.com/h2non/bimg
+    style F fill:#f9f,stroke:#333,stroke-width:2px
+    style B fill:#bbf,stroke:#333,stroke-width:2px
 ```
 
-### libvips
-
-Follow `libvips` installation instructions:
-
-[https://libvips.github.io/libvips/install.html](https://libvips.github.io/libvips/install.html)
-
-##### Installation script
-
-**Note**: install script is officially deprecated, it might not work as expected. We recommend following [libvips install](https://libvips.github.io/libvips/install.html) instructions.
-
-Run the following script as `sudo` (supports OSX, Debian/Ubuntu, Redhat, Fedora, Amazon Linux):
-```bash
-curl -s https://raw.githubusercontent.com/h2non/bimg/master/preinstall.sh | sudo bash -
-```
-
-If you want to take the advantage of [OpenSlide](http://openslide.org/), simply add `--with-openslide` to enable it:
-```bash
-curl -s https://raw.githubusercontent.com/h2non/bimg/master/preinstall.sh | sudo bash -s --with-openslide
-```
-
-The [install script](https://github.com/h2non/bimg/blob/master/preinstall.sh) requires `curl` and `pkg-config`.
-
-## Performance
-
-libvips is probably the fastest open source solution for image processing.
-Here you can see some performance test comparisons for multiple scenarios:
-
-- [libvips speed and memory usage](https://github.com/jcupitt/libvips/wiki/Speed-and-memory-use)
-
-## Benchmark
-
-Tested using Go 1.5.1 and libvips-7.42.3 in OSX i7 2.7Ghz
-```
-BenchmarkRotateJpeg-8     	      20	  64686945 ns/op
-BenchmarkResizeLargeJpeg-8	      20	  63390416 ns/op
-BenchmarkResizePng-8      	     100	  18147294 ns/op
-BenchmarkResizeWebP-8     	     100	  20836741 ns/op
-BenchmarkConvertToJpeg-8  	     100	  12831812 ns/op
-BenchmarkConvertToPng-8   	      10	 128901422 ns/op
-BenchmarkConvertToWebp-8  	      10	 204027990 ns/op
-BenchmarkCropJpeg-8       	      30	  59068572 ns/op
-BenchmarkCropPng-8        	      10	 117303259 ns/op
-BenchmarkCropWebP-8       	      10	 107060659 ns/op
-BenchmarkExtractJpeg-8    	      50	  30708919 ns/op
-BenchmarkExtractPng-8     	    3000	    595546 ns/op
-BenchmarkExtractWebp-8    	    3000	    386379 ns/op
-BenchmarkZoomJpeg-8       	      10	 160005424 ns/op
-BenchmarkZoomPng-8        	      30	  44561047 ns/op
-BenchmarkZoomWebp-8       	      10	 126732678 ns/op
-BenchmarkWatermarkJpeg-8  	      20	  79006133 ns/op
-BenchmarkWatermarPng-8    	     200	   8197291 ns/op
-BenchmarkWatermarWebp-8   	      30	  49360369 ns/op
-```
-
-## Examples
-
-```go
-import (
-  "fmt"
-  "os"
-  "github.com/h2non/bimg"
-)
-```
-
-#### Resize
-
-```go
-buffer, err := bimg.Read("image.jpg")
-if err != nil {
-  fmt.Fprintln(os.Stderr, err)
-}
-
-newImage, err := bimg.NewImage(buffer).Resize(800, 600)
-if err != nil {
-  fmt.Fprintln(os.Stderr, err)
-}
-
-size, err := bimg.NewImage(newImage).Size()
-if size.Width == 800 && size.Height == 600 {
-  fmt.Println("The image size is valid")
-}
-
-bimg.Write("new.jpg", newImage)
-```
-
-#### Rotate
-
-```go
-buffer, err := bimg.Read("image.jpg")
-if err != nil {
-  fmt.Fprintln(os.Stderr, err)
-}
-
-newImage, err := bimg.NewImage(buffer).Rotate(90)
-if err != nil {
-  fmt.Fprintln(os.Stderr, err)
-}
-
-bimg.Write("new.jpg", newImage)
-```
-
-#### Convert
-
-```go
-buffer, err := bimg.Read("image.jpg")
-if err != nil {
-  fmt.Fprintln(os.Stderr, err)
-}
-
-newImage, err := bimg.NewImage(buffer).Convert(bimg.PNG)
-if err != nil {
-  fmt.Fprintln(os.Stderr, err)
-}
-
-if bimg.NewImage(newImage).Type() == "png" {
-  fmt.Fprintln(os.Stderr, "The image was converted into png")
-}
-```
-
-#### Force resize
-
-Force resize operation without preserving the aspect ratio:
-
-```go
-buffer, err := bimg.Read("image.jpg")
-if err != nil {
-  fmt.Fprintln(os.Stderr, err)
-}
-
-newImage, err := bimg.NewImage(buffer).ForceResize(1000, 500)
-if err != nil {
-  fmt.Fprintln(os.Stderr, err)
-}
-
-size := bimg.Size(newImage)
-if size.Width != 1000 || size.Height != 500 {
-  fmt.Fprintln(os.Stderr, "Incorrect image size")
-}
-```
-
-#### Custom colour space (black & white)
-
-```go
-buffer, err := bimg.Read("image.jpg")
-if err != nil {
-  fmt.Fprintln(os.Stderr, err)
-}
-
-newImage, err := bimg.NewImage(buffer).Colourspace(bimg.INTERPRETATION_B_W)
-if err != nil {
-  fmt.Fprintln(os.Stderr, err)
-}
-
-colourSpace, _ := bimg.ImageInterpretation(newImage)
-if colourSpace != bimg.INTERPRETATION_B_W {
-  fmt.Fprintln(os.Stderr, "Invalid colour space")
-}
-```
-
-#### Custom options
-
-See [Options](https://godoc.org/github.com/h2non/bimg#Options) struct to discover all the available fields
-
-```go
-options := bimg.Options{
-  Width:        800,
-  Height:       600,
-  Crop:         true,
-  Quality:      95,
-  Rotate:       180,
-  Interlace:    true,
-}
-
-buffer, err := bimg.Read("image.jpg")
-if err != nil {
-  fmt.Fprintln(os.Stderr, err)
-}
-
-newImage, err := bimg.NewImage(buffer).Process(options)
-if err != nil {
-  fmt.Fprintln(os.Stderr, err)
-}
-
-bimg.Write("new.jpg", newImage)
-```
-
-#### Watermark
-
-```go
-buffer, err := bimg.Read("image.jpg")
-if err != nil {
-  fmt.Fprintln(os.Stderr, err)
-}
-
-watermark := bimg.Watermark{
-  Text:       "Chuck Norris (c) 2315",
-  Opacity:    0.25,
-  Width:      200,
-  DPI:        100,
-  Margin:     150,
-  Font:       "sans bold 12",
-  Background: bimg.Color{255, 255, 255},
-}
-
-newImage, err := bimg.NewImage(buffer).Watermark(watermark)
-if err != nil {
-  fmt.Fprintln(os.Stderr, err)
-}
-
-bimg.Write("new.jpg", newImage)
-```
-
-#### Fluent interface
-
-```go
-buffer, err := bimg.Read("image.jpg")
-if err != nil {
-  fmt.Fprintln(os.Stderr, err)
-}
-
-image := bimg.NewImage(buffer)
-
-// first crop image
-_, err := image.CropByWidth(300)
-if err != nil {
-  fmt.Fprintln(os.Stderr, err)
-}
-
-// then flip it
-newImage, err := image.Flip()
-if err != nil {
-  fmt.Fprintln(os.Stderr, err)
-}
-
-// save the cropped and flipped image
-bimg.Write("new.jpg", newImage)
-```
-
-## Debugging
-
-Run the process passing the `DEBUG` environment variable
-```
-DEBUG=bimg ./app
-```
-
-Enable libvips traces (note that a lot of data will be written in stdout):
-```
-VIPS_TRACE=1 ./app
-```
-
-You can also dump a core on failure, as [John Cuppit](https://github.com/jcupitt) said:
-```c
-g_log_set_always_fatal(
-                G_LOG_FLAG_RECURSION |
-                G_LOG_FLAG_FATAL |
-                G_LOG_LEVEL_ERROR |
-                G_LOG_LEVEL_CRITICAL |
-                G_LOG_LEVEL_WARNING );
-```
-
-Or set the G_DEBUG environment variable:
-```
-export G_DEBUG=fatal-warnings,fatal-criticals
-```
-
-## API
-
-See [godoc reference](https://godoc.org/github.com/h2non/bimg) for detailed API documentation.
-
-## Authors
-
-- [Tomás Aparicio](https://github.com/h2non) - Original author and architect.
-
-## Credits
-
-People who recurrently contributed to improve `bimg` in some way.
-
-- [John Cupitt](https://github.com/jcupitt)
-- [Yoan Blanc](https://github.com/greut)
-- [Christophe Eblé](https://github.com/chreble)
-- [Brant Fitzsimmons](https://github.com/bfitzsimmons)
-- [Thomas Meson](https://github.com/zllak)
-
-Thank you!
-
-## License
-
-MIT - Tomas Aparicio
-
-[![views](https://sourcegraph.com/api/repos/github.com/h2non/bimg/.counters/views.svg)](https://sourcegraph.com/github.com/h2non/bimg)
+bimg is a Go library that wraps libvips through CGO to provide fast image processing. It accepts image byte buffers as input, applies transformations via libvips C functions, and returns processed image buffers. The library uses a fluent DSL interface for chaining operations and direct function calls for single operations.
+
+## How It Works
+
+1. **Image Loading**: Reads image byte buffers and detects format (JPEG, PNG, WebP, TIFF, PDF, SVG, GIF, HEIF, AVIF, JXL) via magic bytes
+2. **Format Detection**: Uses `vipsImageType()` to identify image format from buffer headers
+3. **Transformation Pipeline**: Applies operations in sequence - auto-rotate, shrink-on-load optimization, resize/crop, effects, watermarks
+4. **EXIF Handling**: Automatically rotates images based on EXIF orientation metadata unless disabled
+5. **Optimization**: Uses libvips shrink-on-load for JPEG/WebP to reduce memory usage on large images
+6. **Color Space Management**: Converts images to target color space (RGB, sRGB, B&W, CMYK) and applies ICC profiles
+7. **Output Encoding**: Saves transformed images to JPEG, PNG, WebP, TIFF, HEIF, AVIF, GIF, or JXL formats with quality/compression settings
+
+## Configuration
+
+bimg uses a comprehensive Options struct rather than environment variables.
+
+| Option | Default | Description | Required |
+|--------|---------|-------------|----------|
+| Width | 0 | Target width in pixels | No |
+| Height | 0 | Target height in pixels | No |
+| Quality | 75 | JPEG/WebP quality (0-100) | No |
+| Compression | 6 | PNG compression level (0-9) | No |
+| Type | Auto | Output format (JPEG, PNG, WebP, etc.) | No |
+| Crop | false | Enable crop mode | No |
+| Enlarge | false | Allow enlarging smaller images | No |
+| Embed | false | Embed image in canvas | No |
+| Rotate | 0 | Rotation angle (0, 90, 180, 270) | No |
+| NoAutoRotate | false | Disable EXIF auto-rotation | No |
+| Flip | false | Flip vertically | No |
+| Flop | false | Flip horizontally | No |
+| Force | false | Force resize without aspect ratio | No |
+| Gravity | GravityCentre | Crop gravity (Centre, North, South, East, West, Smart) | No |
+| Interpolator | Bicubic | Resize interpolation algorithm | No |
+| Kernel | CubicKernel | Resampling kernel for reduce operations | No |
+| Interlace | false | Enable progressive/interlaced output | No |
+| StripMetadata | false | Remove EXIF/metadata from output | No |
+| NoProfile | false | Remove ICC color profile | No |
+| Lossless | false | Enable lossless compression for WebP/AVIF | No |
+| Background | Black | Background color for transparent images | No |
+| GaussianBlur.Sigma | 0 | Gaussian blur strength | No |
+| Sharpen.Radius | 0 | Sharpen radius | No |
+| Gamma | 0 | Gamma correction value | No |
+| Brightness | 0 | Brightness adjustment (-100 to 100) | No |
+| Contrast | 0 | Contrast adjustment | No |
+| Watermark | - | Text watermark configuration | No |
+| WatermarkImage | - | Image watermark configuration | No |
+| Trim | false | Auto-trim edges based on background color | No |
+| Threshold | 0 | Threshold for trim operation | No |
+| Speed | 0 | Encoder speed (0-8 for AVIF, 0-9 for PNG) | No |
+| Palette | false | Use palette mode for PNG | No |
+| InputICC | "" | Path to input ICC profile | No |
+| OutputICC | "" | Path to output ICC profile | No |
+
+## Component Breakdown
+
+### Image Struct
+
+Provides a fluent DSL interface for chaining image operations. Wraps an image buffer and exposes methods like `Resize()`, `Crop()`, `Rotate()`, `Watermark()` that return the modified buffer and update the internal state.
+
+### resizer Function
+
+Core transformation engine in `resizer.go` that orchestrates the entire image processing pipeline. Loads images, applies defaults, handles EXIF rotation, calculates optimal shrink factors, applies transformations (resize, crop, extract), effects (blur, sharpen, gamma), watermarks, and saves output. Uses libvips shrink-on-load for JPEG/WebP when shrink >= 2 to reduce memory usage.
+
+### vips Bindings
+
+CGO wrapper functions in `vips.go` that interface with libvips C library. Includes thread-safe initialization, memory management with configurable cache limits (default 100MB, 500 operations), and low-level operations like `vipsRotate`, `vipsZoom`, `vipsExtract`, `vipsShrink`, `vipsWatermark`, `vipsGaussianBlur`, `vipsSave`.
+
+### Type Detection
+
+Image format identification system in `type.go` using magic byte sequences. Supports lazy discovery of libvips-supported formats at runtime with thread-safe caching.
+
+### Metadata Extraction
+
+EXIF and image metadata reading in `metadata.go`. Extracts comprehensive EXIF data including camera settings, GPS coordinates, timestamps, and image properties (size, channels, alpha, color space).
+
+### Options Processing
+
+Transformation configuration in `options.go`. Defines all supported operations including geometric transforms, color adjustments, compression settings, and output formats.
+
+## Troubleshooting
+
+### libvips Version Issues
+
+**Problem**: Unsupported image formats or missing features
+
+**Solution**: Upgrade to libvips 8.3+ for GIF/PDF/SVG, 8.6+ for trim, 8.9+ for AVIF. Check support with `VipsIsTypeSupported()`.
+
+### Memory Leaks
+
+**Problem**: Growing memory usage over time
+
+**Solution**: Ensure `vips_thread_shutdown()` is called (automatic via defer). Adjust cache limits with `VipsCacheSetMaxMem()` and `VipsCacheSetMax()`. Call `VipsCacheDropAll()` to force cache cleanup.
+
+### CGO Build Errors
+
+**Problem**: Cannot find vips/vips.h or linking errors
+
+**Solution**: Install libvips development headers and ensure pkg-config can find vips. Set `PKG_CONFIG_PATH` if needed. On macOS: `brew install vips`. On Ubuntu/Debian: `apt-get install libvips-dev`.
+
+### Panic on Initialization
+
+**Problem**: "unsupported libvips version!" or "unable to start vips!" panic
+
+**Solution**: Requires libvips 7.40+. Check installation with `pkg-config --modversion vips`. Reinstall libvips if version is too old.
+
+### Smart Crop Not Working
+
+**Problem**: Smart crop doesn't focus on interesting areas
+
+**Solution**: Requires libvips 8.5+. Ensure `Gravity: GravitySmart` is set. Smart crop analyzes image entropy to find regions of interest.
+
+### Maximum Image Size Exceeded
+
+**Problem**: "Maximum image size exceeded" error
+
+**Solution**: Default max dimension is 16383 pixels. Change with `SetMaxsize(newSize)`. Ensure sufficient memory for large images.
+
+## Related Repositories
+
+This is a fork of the upstream repository:
+- **h2non/bimg**: https://github.com/h2non/bimg - Original upstream project
+- **libvips/libvips**: https://github.com/libvips/libvips - Underlying C library
+- **h2non/imaginary**: https://github.com/h2non/imaginary - HTTP microservice built on bimg
+
+For HTTP-based image processing, consider using imaginary which provides a REST API on top of bimg.
+
